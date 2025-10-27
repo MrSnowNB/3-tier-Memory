@@ -1,0 +1,2 @@
+concurrency,result,duration_actual,total_requests,overall_error_rate,p95_baseline,p95_final,throughput_req_per_sec,throughput_embed_per_sec,memory_trend_mb_per_minute,models_used
+2,FAILED,30.00168490409851,150,0.6,541.0687923431396,541.0687923431396,0,0,0.0,nomic-embed-text:137m-v1.5-fp16

@@ -1,14 +1,22 @@
 PHASE 2: EMBEDDINGS STRESS TEST LOG
 Models: nomic-embed-text:137m-v1.5-fp16
-Started: 2025-10-27 13:33:26
-Duration: 5 seconds
-Concurrency: 2
+Started: 2025-10-27 13:58:06
+Duration: 15 seconds
+Concurrency: 4
 
-Minute 1: 2025-10-27 13:33:26
+Minute 1: 2025-10-27 13:58:06
+  Requests: 142
+  Error Rate: 72.5%
+  Latency p95: 539.8ms
+  Throughput: 2.4 req/s
+  Memory: 82MB
+  CPU: 0.0%
+
+Minute 2: 2025-10-27 13:58:21
   Requests: 18
-  Error Rate: 94.4%
-  Latency p95: 554.2ms
+  Error Rate: 66.7%
+  Latency p95: 532.5ms
   Throughput: 0.3 req/s
-  Memory: 85MB
+  Memory: 82MB
   CPU: 0.0%
 

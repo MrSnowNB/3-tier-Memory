@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_MODEL = "nomic-embed-text"
 VECTOR_DIM = 768
+EMBEDDINGS_ENDPOINT = "/api/embeddings"
 
 @dataclass
 class TestConfig:
@@ -178,11 +179,10 @@ class EmbeddingsStressTest:
 
     async def _warmup_phase(self):
         """Warm up the embedding models before timed testing."""
-        logger.info("🔥 WARM-UP PHASE (2 minutes)")
+        logger.info("🔥 WARM-UP PHASE")
 
         # Single-threaded warmup requests
         import aiohttp
-        texts = ["warmup text"] * self.config.batch_size
 
         async with aiohttp.ClientSession() as session:
             for i in range(10):  # 10 warmup batches
@@ -191,26 +191,25 @@ class EmbeddingsStressTest:
                     model = self.config.models[i % len(self.config.models)]
                     payload = {
                         "model": model,
-                        "input": texts,
-                        "stream": False
+                        "prompt": "warmup text"
                     }
 
-                    async with session.post(f"{OLLAMA_BASE_URL}/api/embed",
+                    async with session.post(f"{OLLAMA_BASE_URL}{EMBEDDINGS_ENDPOINT}",
                                           json=payload,
                                           headers={"Content-Type": "application/json"}) as resp:
 
                         if resp.status == 200:
                             data = await resp.json()
-                            vectors = data.get('embeddings', [])
-                            logger.info(f"Warmup batch {i+1}/10 ({model}): {len(vectors)} vectors @ {len(vectors[0]) if vectors else 0}D")
+                            embedding = data.get('embedding', [])
+                            logger.info(f"Warmup {i+1}/10 ({model}): {len(embedding)} dimensions")
                         else:
-                            logger.warning(f"Warmup batch {i+1} ({model}) failed: {resp.status}")
+                            logger.warning(f"Warmup {i+1} ({model}) failed: {resp.status}")
 
                 except Exception as e:
-                    logger.warning(f"Warmup batch {i+1} error: {e}")
+                    logger.warning(f"Warmup {i+1} error: {e}")
 
                 # Small delay between batches
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
 
         logger.info("✅ Warm-up completed")
 
@@ -246,68 +245,171 @@ class EmbeddingsStressTest:
 
         async with aiohttp.ClientSession() as session:
             while time.time() < self.start_time + self.config.duration_seconds:
-                try:
-                    # Generate random payload
-                    texts = self._generate_random_texts(self.config.batch_size)
-                    payload_tokens = sum(len(text.split()) for text in texts)
+                # Generate random texts for this batch
+                texts = self._generate_random_texts(self.config.batch_size)
 
-                    # Make request
+                # Process each text individually (since Ollama API only accepts single prompts)
+                for text in texts:
+                    try:
+                        payload_tokens = len(text.split())
+
+                        # Make individual request
+                        start_time = time.time()
+
+                        # Randomly select model from available models
+                        model = random.choice(self.config.models)
+                        payload = {
+                            "model": model,
+                            "prompt": text
+                        }
+
+                        async with session.post(f"{OLLAMA_BASE_URL}{EMBEDDINGS_ENDPOINT}",
+                                              json=payload,
+                                              headers={"Content-Type": "application/json"}) as resp:
+
+                            end_time = time.time()
+                            latency_ms = (end_time - start_time) * 1000
+
+                            if resp.status == 200:
+                                data = await resp.json()
+                                embedding = data.get('embedding', [])
+                                vector_count = len(embedding)
+
+                                # Record successful request
+                                metrics = RequestMetrics(
+                                    worker_id=worker_id,
+                                    timestamp=end_time,
+                                    latency_ms=latency_ms,
+                                    success=True,
+                                    payload_tokens=payload_tokens,
+                                    batch_size=1  # Each individual request embeds 1 text
+                                )
+
+                            else:
+                                error_text = await resp.text()
+
+                                # Record failed request
+                                metrics = RequestMetrics(
+                                    worker_id=worker_id,
+                                    timestamp=end_time,
+                                    latency_ms=latency_ms,
+                                    success=False,
+                                    error_type=f"HTTP_{resp.status}",
+                                    payload_tokens=payload_tokens,
+                                    batch_size=1
+                                )
+
+                                # Record error details
+                                error_record = {
+                                    "timestamp": end_time,
+                                    "worker_id": worker_id,
+                                    "status_code": resp.status,
+                                    "error_message": error_text,
+                                    "latency_ms": latency_ms,
+                                    "payload_tokens": payload_tokens
+                                }
+                                self.errors.append(error_record)
+
+                            # Atomically add to shared metrics
+                            self.request_data.append(metrics)
+
+                    except Exception as e:
+                        end_time = time.time()
+                        # Record error
+                        metrics = RequestMetrics(
+                            worker_id=worker_id,
+                            timestamp=end_time,
+                            latency_ms=0.0,
+                            success=False,
+                            error_type=str(type(e).__name__)
+                        )
+                        self.request_data.append(metrics)
+
+                        error_record = {
+                            "timestamp": end_time,
+                            "worker_id": worker_id,
+                            "error_type": str(type(e).__name__),
+                            "error_message": str(e)
+                        }
+                        self.errors.append(error_record)
+
+                    # Small delay between individual requests
+                    await asyncio.sleep(0.005)
+
+                # Slightly longer delay between batches to prevent overwhelming
+                await asyncio.sleep(0.01)
+
+    async def _make_embedding_request(self, worker_id: int) -> None:
+        """Make batch_size individual embedding requests using httpx."""
+        import httpx
+
+        # Create client with proper limits
+        limits = httpx.Limits(max_connections=1, max_keepalive_connections=1)
+        timeout = httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=None)
+
+        async with httpx.AsyncClient(limits=limits, timeout=timeout) as client:
+            # Process batch_size individual texts
+            texts = self._generate_random_texts(self.config.batch_size)
+
+            for text in texts:
+                try:
+                    payload_tokens = len(text.split())
+
+                    # Make individual request
                     start_time = time.time()
 
                     # Randomly select model from available models
                     model = random.choice(self.config.models)
                     payload = {
                         "model": model,
-                        "input": texts,
-                        "stream": False
+                        "prompt": text
                     }
 
-                    async with session.post(f"{OLLAMA_BASE_URL}/api/embed",
-                                          json=payload,
-                                          headers={"Content-Type": "application/json"}) as resp:
+                    resp = await client.post(f"{OLLAMA_BASE_URL}{EMBEDDINGS_ENDPOINT}",
+                                           json=payload,
+                                           headers={"Content-Type": "application/json"})
 
-                        end_time = time.time()
-                        latency_ms = (end_time - start_time) * 1000
+                    end_time = time.time()
+                    latency_ms = (end_time - start_time) * 1000
 
-                        if resp.status == 200:
-                            data = await resp.json()
-                            vectors = data.get('embeddings', [])
-                            vector_count = len(vectors)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        embedding = data.get('embedding', [])
 
-                            # Record successful request
-                            metrics = RequestMetrics(
-                                worker_id=worker_id,
-                                timestamp=end_time,
-                                latency_ms=latency_ms,
-                                success=True,
-                                payload_tokens=payload_tokens,
-                                batch_size=self.config.batch_size
-                            )
+                        # Record successful request
+                        metrics = RequestMetrics(
+                            worker_id=worker_id,
+                            timestamp=end_time,
+                            latency_ms=latency_ms,
+                            success=True,
+                            payload_tokens=payload_tokens,
+                            batch_size=1  # Each individual request embeds 1 text
+                        )
 
-                        else:
-                            error_text = await resp.text()
+                    else:
+                        error_text = resp.text
 
-                            # Record failed request
-                            metrics = RequestMetrics(
-                                worker_id=worker_id,
-                                timestamp=end_time,
-                                latency_ms=latency_ms,
-                                success=False,
-                                error_type=f"HTTP_{resp.status}",
-                                payload_tokens=payload_tokens,
-                                batch_size=self.config.batch_size
-                            )
+                        # Record failed request
+                        metrics = RequestMetrics(
+                            worker_id=worker_id,
+                            timestamp=end_time,
+                            latency_ms=latency_ms,
+                            success=False,
+                            error_type=f"HTTP_{resp.status_code}",
+                            payload_tokens=payload_tokens,
+                            batch_size=1
+                        )
 
-                            # Record error details
-                            error_record = {
-                                "timestamp": end_time,
-                                "worker_id": worker_id,
-                                "status_code": resp.status,
-                                "error_message": error_text,
-                                "latency_ms": latency_ms,
-                                "payload_tokens": payload_tokens
-                            }
-                            self.errors.append(error_record)
+                        # Record error details
+                        error_record = {
+                            "timestamp": end_time,
+                            "worker_id": worker_id,
+                            "status_code": resp.status_code,
+                            "error_message": error_text,
+                            "latency_ms": latency_ms,
+                            "payload_tokens": payload_tokens
+                        }
+                        self.errors.append(error_record)
 
                     # Atomically add to shared metrics
                     self.request_data.append(metrics)
@@ -332,102 +434,11 @@ class EmbeddingsStressTest:
                     }
                     self.errors.append(error_record)
 
-                # Small delay to prevent overwhelming the service
-                await asyncio.sleep(0.01)
+                # Small delay between individual requests
+                await asyncio.sleep(0.005)
 
-    async def _make_embedding_request(self, worker_id: int) -> None:
-        """Make a single embedding request using httpx."""
-        import httpx
-
-        # Create client with proper limits
-        limits = httpx.Limits(max_connections=1, max_keepalive_connections=1)
-        timeout = httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=None)
-
-        try:
-            # Generate random payload
-            texts = self._generate_random_texts(self.config.batch_size)
-            payload_tokens = sum(len(text.split()) for text in texts)
-
-            # Make request
-            start_time = time.time()
-
-            # Randomly select model from available models
-            model = random.choice(self.config.models)
-            payload = {
-                "model": model,
-                "input": texts,
-                "stream": False
-            }
-
-            async with httpx.AsyncClient(limits=limits, timeout=timeout) as client:
-                resp = await client.post(f"{OLLAMA_BASE_URL}/api/embed",
-                                       json=payload,
-                                       headers={"Content-Type": "application/json"})
-
-                end_time = time.time()
-                latency_ms = (end_time - start_time) * 1000
-
-                if resp.status_code == 200:
-                    data = resp.json()
-                    vectors = data.get('embeddings', [])
-
-                    # Record successful request
-                    metrics = RequestMetrics(
-                        worker_id=worker_id,
-                        timestamp=end_time,
-                        latency_ms=latency_ms,
-                        success=True,
-                        payload_tokens=payload_tokens,
-                        batch_size=self.config.batch_size
-                    )
-
-                else:
-                    error_text = resp.text
-
-                    # Record failed request
-                    metrics = RequestMetrics(
-                        worker_id=worker_id,
-                        timestamp=end_time,
-                        latency_ms=latency_ms,
-                        success=False,
-                        error_type=f"HTTP_{resp.status_code}",
-                        payload_tokens=payload_tokens,
-                        batch_size=self.config.batch_size
-                    )
-
-                    # Record error details
-                    error_record = {
-                        "timestamp": end_time,
-                        "worker_id": worker_id,
-                        "status_code": resp.status_code,
-                        "error_message": error_text,
-                        "latency_ms": latency_ms,
-                        "payload_tokens": payload_tokens
-                    }
-                    self.errors.append(error_record)
-
-            # Atomically add to shared metrics
-            self.request_data.append(metrics)
-
-        except Exception as e:
-            end_time = time.time()
-            # Record error
-            metrics = RequestMetrics(
-                worker_id=worker_id,
-                timestamp=end_time,
-                latency_ms=0.0,
-                success=False,
-                error_type=str(type(e).__name__)
-            )
-            self.request_data.append(metrics)
-
-            error_record = {
-                "timestamp": end_time,
-                "worker_id": worker_id,
-                "error_type": str(type(e).__name__),
-                "error_message": str(e)
-            }
-            self.errors.append(error_record)
+            # Slightly longer delay between "batches" to prevent overwhelming
+            await asyncio.sleep(0.01)
 
     def _sample_system_metrics(self) -> Dict[str, Union[float, int]]:
         """Sample current system resource usage."""

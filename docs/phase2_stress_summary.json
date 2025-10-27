@@ -4,13 +4,13 @@
   "models": [
     "nomic-embed-text:137m-v1.5-fp16"
   ],
-  "timestamp": "2025-10-27 13:33:31",
+  "timestamp": "2025-10-27 13:58:36",
   "config": {
-    "duration_seconds": 5,
-    "concurrency": 2,
-    "batch_size": 4,
+    "duration_seconds": 15,
+    "concurrency": 4,
+    "batch_size": 8,
     "vector_dim": 768,
-    "report_interval_seconds": 5,
+    "report_interval_seconds": 15,
     "payload_length_range": [
       10,
       512
@@ -21,37 +21,37 @@
     "warmup_seconds": 10
   },
   "duration": {
-    "target_seconds": 5,
-    "actual_seconds": 5.0020751953125
+    "target_seconds": 15,
+    "actual_seconds": 30.001025915145874
   },
   "overall_metrics": {
-    "total_requests": 18,
-    "successful_requests": 1,
-    "overall_error_rate": 0.9444444444444444,
-    "p95_baseline": 554.2349815368652,
-    "p95_final": 554.2349815368652,
-    "p95_drift_percent": 0.0,
-    "memory_trend_mb_per_minute": 0.0
+    "total_requests": 160,
+    "successful_requests": 45,
+    "overall_error_rate": 0.71875,
+    "p95_baseline": 536.141037940979,
+    "p95_final": 532.5019359588623,
+    "p95_drift_percent": -0.6787583349509069,
+    "memory_trend_mb_per_minute": 0.0234375
   },
   "gates": {
     "availability": {
       "passed": false,
       "target_error_rate": 0.005,
-      "actual_error_rate": 0.9444444444444444
+      "actual_error_rate": 0.71875
     },
     "latency_stability": {
       "passed": true,
       "target_p95_drift": 0.2,
-      "actual_p95_drift": 0.0
+      "actual_p95_drift": -0.006787583349509069
     },
     "resource_stability": {
       "passed": true,
       "target_memory_trend": 10.0,
-      "actual_memory_trend": 0.0
+      "actual_memory_trend": 0.0234375
     },
     "backend_health": {
-      "passed": true,
-      "error_count": 17,
+      "passed": false,
+      "error_count": 115,
       "target_max_errors": 100
     }
   },
