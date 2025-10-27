@@ -229,6 +229,7 @@ class ShardCarrier:
             # Check for delivery
             if shard.is_delivered:
                 delivered.append(shard_id)
+                self.total_transports += 1  # Increment delivery counter
                 logger.debug(f"Shard {shard_id} delivered successfully")
                 continue
 

@@ -218,12 +218,12 @@ class VectorShard:
 
 def create_test_shard(grid_size: int = 32, **kwargs) -> VectorShard:
     """Create a test shard with random embedding and destination."""
+    # Extract destination from kwargs if provided
+    destination = kwargs.pop('destination', (np.random.randint(0, grid_size), np.random.randint(0, grid_size)))
+
     # Random embedding vector (768 dims like nomic-embed)
     embedding = np.random.normal(0, 1, 768).astype(np.float32)
     embedding = embedding / np.linalg.norm(embedding)  # Normalize
-
-    # Random destination within grid
-    destination = (np.random.randint(0, grid_size), np.random.randint(0, grid_size))
 
     metadata = {'test_shard': True, 'creation_method': 'create_test_shard'}
 

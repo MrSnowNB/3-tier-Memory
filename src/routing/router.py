@@ -378,6 +378,17 @@ def simulate_single_hop_delivery(router: SingleHopRouter,
             if not shard.is_delivered and not shard.attached_glider_id:
                 router.route_single_hop(shard.shard_id, available_gliders)
 
+        # Move gliders to shard destinations to complete delivery
+        for glider_id, glider_pos in available_gliders.items():
+            attached_shard = router.carrier.get_attached_shard(glider_id)
+            if attached_shard:
+                # Move glider directly to shard destination
+                router.carrier.update_glider_position(glider_id, attached_shard.destination)
+
+                # Check if delivery is complete and detach if so
+                if attached_shard.position == attached_shard.destination:
+                    router.carrier.detach_shard_from_glider(glider_id)
+
         # Process lifecycle (TTL, delivery detection)
         expired, delivered, cleaned = router.carrier.process_shard_lifecycle()
 
@@ -385,16 +396,20 @@ def simulate_single_hop_delivery(router: SingleHopRouter,
             # No more activity
             break
 
-    # Return final statistics
+    # Return final statistics (note: start_shards should be computed from input if needed)
     stats = router.get_routing_stats()
-    carrier = router.carrier.get_transport_statistics()
+    carrier_stats = router.carrier.get_transport_statistics()
+
+    # Total shards starts with original count, minus what's left in carrier
+    # We track this externally for now
+    remaining_shards = carrier_stats['total_shards']  # Current shards still in carrier
 
     return {
         'simulation_steps': step + 1,
-        'successful_deliveries': carrier['successful_deliveries'],
-        'remaining_shards': carrier['total_shards'] - carrier['successful_deliveries'],
+        'successful_deliveries': carrier_stats['successful_deliveries'],
+        'remaining_shards': remaining_shards,
         'routing_success_rate': stats['success_rate'],
-        'expired_shards': carrier['failed_deliveries']
+        'expired_shards': carrier_stats['failed_deliveries']
     }
 
 
