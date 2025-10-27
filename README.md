@@ -1,0 +1,122 @@
+# CyberMesh
+
+A 3-tier memory architecture proof-of-concept implementing LoRA wave propagation via vector shard passing in a Conway's Game of Life cellular automaton substrate.
+
+## Overview
+
+CyberMesh explores a novel approach to memory systems by combining:
+- **Conway's Game of Life (CA)**: Provides the spatial substrate and pattern propagation mechanics
+- **Vector Shards**: Memory fragments encoded as embeddings that "surf" on emergent CA patterns
+- **LoRA Fine-tuning**: Wave propagation layers that enhance pattern persistence and routing efficiency
+
+## Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Tier 1: CA    │    │   Tier 2: Shard │    │   Tier 3: LoRA  │
+│   Substrate     │ => │   Routing       │ => │   Propagation   │
+│   (16x16 grid)  │    │   (Embeddings)  │    │   (Fine-tuning) │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+## Phase Development Status
+
+### Current Phase: Phase 0 - Infrastructure Setup ✅
+- [x] Development policy established (POLICY.md)
+- [x] Living documentation initialized
+- [x] Tool configurations (ruff, mypy, pytest)
+- [x] Project structure created
+- [x] Validation gates configured
+
+### Next Phase: Phase 1 - Conway CA Grid
+- [ ] Implement Conway's Game of Life rules
+- [ ] Glider pattern propagation
+- [ ] Energy field decay mechanics
+- [ ] Performance benchmarking
+
+## Quick Start
+
+### Prerequisites
+- Python 3.12+
+- uv package manager
+- Ollama for embeddings
+- Apple Silicon M3 Max (recommended)
+
+### Setup
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtual environment
+uv venv .venv && source .venv/bin/activate
+
+# Install dependencies
+uv pip install -e .
+
+# Setup environment
+cp .env.example .env
+
+# Install Ollama and pull model
+brew install ollama
+ollama pull nomic-embed-text:137m-v1.5-fp16
+
+# Run smoke tests
+pytest tests/test_smoke.py
+```
+
+### Validation Gates
+```bash
+# Unit tests
+pytest -q
+
+# Linting
+ruff check .
+
+# Type checking
+mypy src/
+
+# Documentation
+mkdocs build --strict
+```
+
+## Development Policy
+
+This project follows strict atomic, gated development:
+- Sequential phases only (no parallel development)
+- All phases pass validation gates before advancing
+- Living documentation updated on failures
+- Zero failures accepted - stop for human input
+
+See [POLICY.md](POLICY.md) for complete development guidelines.
+
+## Living Documentation
+
+- **[POLICY.md](POLICY.md)**: Development policy and lifecycle
+- **[TEST-MATRIX.md](TEST-MATRIX.md)**: Test cases and success criteria
+- **[REPLICATION-NOTES.md](REPLICATION-NOTES.md)**: Environment setup and baselines
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**: Known issues and fixes
+
+## Performance Targets
+
+| Metric | Phase 1 | Phase 2 | Phase 3 |
+|--------|---------|---------|---------|
+| CA Grid Update | <10ms | <10ms | <10ms |
+| Glider Propagation | 95% accuracy | 95% accuracy | 95% accuracy |
+| Shard Routing | - | 95% success | 90% success |
+| Embedding Latency | - | <50ms | <50ms |
+| Memory Usage | <1GB | <2GB | <3GB |
+
+## Contributing
+
+1. Follow [POLICY.md](POLICY.md) exactly
+2. Update living docs for any issues encountered
+3. Pass all validation gates before commits
+4. Use atomic commits per task unit
+
+## License
+
+This is a proof-of-concept implementation. See individual files for licensing.
+
+## Phase Status Dashboard
+
+Phase completion criteria tracked in [TEST-MATRIX.md](TEST-MATRIX.md).
