@@ -1,14 +1,14 @@
 """
-Phase 3 Day 2: Energy-Glider Coupling Validation
+Phase 3 Day 2: Energy-Glider Coupling Validation (EXPERIMENTAL)
 
 Tests energy field influence on glider movement and evolution patterns,
 validating that gliders follow energy gradients as specified in the
 Phase 3 requirements.
-"""
 
-import pytest
-import numpy as np
-from src.energy.glider_coupling import (
+WARNING: These tests are for EXPERIMENTAL agent-level coupling features
+that are DISABLED by default. Only the EnergyField environmental modifiers
+are production-ready. Do not enable these features without understanding
+the over-engineering concerns outlined in the Phase 3 realignment plan.
     EnergyGliderConfig, EnergyGliderCoupling,
     create_energy_biased_glider_evolution,
     get_energy_influence_strength,
