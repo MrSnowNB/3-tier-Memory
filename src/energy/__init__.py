@@ -27,10 +27,10 @@ else:
 __version__ = "0.3.0"
 
 # Public API: core energy field functionality + experimental features if enabled
-__all__ = [
+_CORE_EXPORTS = [
     'EnergyField',
     'create_linear_energy_field',
     'create_radial_energy_field'
 ]
 
-__all__ += _EXPERIMENTAL_FEATURES
+__all__ = _CORE_EXPORTS + _EXPERIMENTAL_FEATURES

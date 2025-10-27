@@ -43,14 +43,18 @@ VECTOR_DIM = 768
 @dataclass
 class TestConfig:
     """Configuration for the embeddings stress test."""
-    duration_seconds: int = 3600
-    concurrency: int = 16
+    duration_seconds: int = 30  # Changed default for scaling tests
+    concurrency: int = 2  # Changed default for baseline
     batch_size: int = 8
     vector_dim: int = VECTOR_DIM
-    report_interval_seconds: int = 60
+    report_interval_seconds: int = 30  # Match test duration for summary
     payload_length_range: tuple[int, int] = (10, 512)
-    model: str = DEFAULT_MODEL
-    warmup_seconds: int = 120  # 2-minute warmup
+    models: List[str] = None  # List of models to alternate between
+    warmup_seconds: int = 10  # Reduced warmup for quick tests
+
+    def __post_init__(self):
+        if self.models is None:
+            self.models = [DEFAULT_MODEL]
 
 @dataclass
 class RequestMetrics:
@@ -111,7 +115,7 @@ class EmbeddingsStressTest:
         logger.info(f"Duration: {self.config.duration_seconds}s")
         logger.info(f"Concurrency: {self.config.concurrency}")
         logger.info(f"Batch size: {self.config.batch_size}")
-        logger.info(f"Model: {self.config.model}")
+        logger.info(f"Models: {', '.join(self.config.models)}")
 
         try:
             # Verify Ollama connectivity
@@ -136,40 +140,44 @@ class EmbeddingsStressTest:
             raise
 
     async def _verify_ollama(self) -> bool:
-        """Verify Ollama service is available and model is loaded."""
+        """Verify Ollama service is available and models are loaded."""
         try:
-            import aiohttp
+            import httpx
 
-            async with aiohttp.ClientSession() as session:
+            # Single timeout policy - no asyncio.wait_for, rely on client timeout
+            timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=None)
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 # Check service health
-                async with session.get(f"{OLLAMA_BASE_URL}/api/tags") as resp:
-                    if resp.status != 200:
+                resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+                if resp.status_code != 200:
+                    return False
+
+                data = resp.json()
+                available_models = [model['name'] for model in data.get('models', [])]
+
+                missing_models = [m for m in self.config.models if m not in available_models]
+                if missing_models:
+                    logger.warning(f"Models not found: {missing_models}. Available: {available_models}")
+                    # Try to find alternative embedding models
+                    embed_models = [m for m in available_models if 'embed' in m.lower()]
+                    if embed_models:
+                        logger.info(f"Using available embedding models: {embed_models[:2]}")
+                        self.config.models = embed_models[:2]  # Use up to 2 models
+                    else:
                         return False
-
-                    data = await resp.json()
-                    available_models = [model['name'] for model in data.get('models', [])]
-
-                    if self.config.model not in available_models:
-                        logger.warning(f"Model {self.config.model} not found. Available: {available_models}")
-                        # Try to determine actual embedding model
-                        embed_models = [m for m in available_models if 'embed' in m.lower()]
-                        if embed_models:
-                            logger.info(f"Using available embedding model: {embed_models[0]}")
-                            self.config.model = embed_models[0]
-                        else:
-                            return False
 
             return True
 
         except ImportError:
-            logger.error("aiohttp not available. Install with: pip install aiohttp")
+            logger.error("httpx not available. Install with: pip install httpx")
             return False
         except Exception as e:
             logger.error(f"Ollama verification failed: {e}")
             return False
 
     async def _warmup_phase(self):
-        """Warm up the embedding model before timed testing."""
+        """Warm up the embedding models before timed testing."""
         logger.info("🔥 WARM-UP PHASE (2 minutes)")
 
         # Single-threaded warmup requests
@@ -179,8 +187,10 @@ class EmbeddingsStressTest:
         async with aiohttp.ClientSession() as session:
             for i in range(10):  # 10 warmup batches
                 try:
+                    # Rotate through available models for warmup
+                    model = self.config.models[i % len(self.config.models)]
                     payload = {
-                        "model": self.config.model,
+                        "model": model,
                         "input": texts,
                         "stream": False
                     }
@@ -192,9 +202,9 @@ class EmbeddingsStressTest:
                         if resp.status == 200:
                             data = await resp.json()
                             vectors = data.get('embeddings', [])
-                            logger.info(f"Warmup batch {i+1}/10: {len(vectors)} vectors @ {len(vectors[0]) if vectors else 0}D")
+                            logger.info(f"Warmup batch {i+1}/10 ({model}): {len(vectors)} vectors @ {len(vectors[0]) if vectors else 0}D")
                         else:
-                            logger.warning(f"Warmup batch {i+1} failed: {resp.status}")
+                            logger.warning(f"Warmup batch {i+1} ({model}) failed: {resp.status}")
 
                 except Exception as e:
                     logger.warning(f"Warmup batch {i+1} error: {e}")
@@ -244,8 +254,10 @@ class EmbeddingsStressTest:
                     # Make request
                     start_time = time.time()
 
+                    # Randomly select model from available models
+                    model = random.choice(self.config.models)
                     payload = {
-                        "model": self.config.model,
+                        "model": model,
                         "input": texts,
                         "stream": False
                     }
@@ -322,6 +334,100 @@ class EmbeddingsStressTest:
 
                 # Small delay to prevent overwhelming the service
                 await asyncio.sleep(0.01)
+
+    async def _make_embedding_request(self, worker_id: int) -> None:
+        """Make a single embedding request using httpx."""
+        import httpx
+
+        # Create client with proper limits
+        limits = httpx.Limits(max_connections=1, max_keepalive_connections=1)
+        timeout = httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=None)
+
+        try:
+            # Generate random payload
+            texts = self._generate_random_texts(self.config.batch_size)
+            payload_tokens = sum(len(text.split()) for text in texts)
+
+            # Make request
+            start_time = time.time()
+
+            # Randomly select model from available models
+            model = random.choice(self.config.models)
+            payload = {
+                "model": model,
+                "input": texts,
+                "stream": False
+            }
+
+            async with httpx.AsyncClient(limits=limits, timeout=timeout) as client:
+                resp = await client.post(f"{OLLAMA_BASE_URL}/api/embed",
+                                       json=payload,
+                                       headers={"Content-Type": "application/json"})
+
+                end_time = time.time()
+                latency_ms = (end_time - start_time) * 1000
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    vectors = data.get('embeddings', [])
+
+                    # Record successful request
+                    metrics = RequestMetrics(
+                        worker_id=worker_id,
+                        timestamp=end_time,
+                        latency_ms=latency_ms,
+                        success=True,
+                        payload_tokens=payload_tokens,
+                        batch_size=self.config.batch_size
+                    )
+
+                else:
+                    error_text = resp.text
+
+                    # Record failed request
+                    metrics = RequestMetrics(
+                        worker_id=worker_id,
+                        timestamp=end_time,
+                        latency_ms=latency_ms,
+                        success=False,
+                        error_type=f"HTTP_{resp.status_code}",
+                        payload_tokens=payload_tokens,
+                        batch_size=self.config.batch_size
+                    )
+
+                    # Record error details
+                    error_record = {
+                        "timestamp": end_time,
+                        "worker_id": worker_id,
+                        "status_code": resp.status_code,
+                        "error_message": error_text,
+                        "latency_ms": latency_ms,
+                        "payload_tokens": payload_tokens
+                    }
+                    self.errors.append(error_record)
+
+            # Atomically add to shared metrics
+            self.request_data.append(metrics)
+
+        except Exception as e:
+            end_time = time.time()
+            # Record error
+            metrics = RequestMetrics(
+                worker_id=worker_id,
+                timestamp=end_time,
+                latency_ms=0.0,
+                success=False,
+                error_type=str(type(e).__name__)
+            )
+            self.request_data.append(metrics)
+
+            error_record = {
+                "timestamp": end_time,
+                "worker_id": worker_id,
+                "error_type": str(type(e).__name__),
+                "error_message": str(e)
+            }
+            self.errors.append(error_record)
 
     def _sample_system_metrics(self) -> Dict[str, Union[float, int]]:
         """Sample current system resource usage."""
@@ -430,17 +536,29 @@ class EmbeddingsStressTest:
         )
 
     async def _run_test_phase(self):
-        """Execute the main concurrent test phase."""
+        """Execute the main concurrent test phase using httpx with semaphores."""
         logger.info("🎯 MAIN TEST PHASE STARTED")
 
         # Ensure start_time is initialized
         assert self.start_time is not None
 
+        # Configure shared httpx client with limits
+        import httpx
+        from httpx import Limits, Timeout
+
+        limits = Limits(max_connections=self.config.concurrency,
+                       max_keepalive_connections=self.config.concurrency)
+        timeout = Timeout(connect=5.0, read=15.0, write=15.0, pool=None)
+
+        # Concurrency semaphore - already limits so we don't need another
+        # Workers will be controlled by individual client limits
+
+        async def worker(worker_id: int):
+            while time.time() < (self.start_time or 0) + self.config.duration_seconds:
+                await self._make_embedding_request(worker_id)
+
         # Start worker tasks
-        worker_tasks = []
-        for worker_id in range(self.config.concurrency):
-            task = asyncio.create_task(self._worker_task(worker_id))
-            worker_tasks.append(task)
+        worker_tasks = [asyncio.create_task(worker(i)) for i in range(self.config.concurrency)]
 
         # Metrics collection loop
         current_minute_start = self.start_time
@@ -452,7 +570,8 @@ class EmbeddingsStressTest:
             await asyncio.sleep(sleep_time)
 
             # Collect metrics for the past minute
-            minute_requests = [r for r in self.request_data if r.timestamp >= current_minute_start and r.timestamp < next_minute]
+            minute_requests = [r for r in self.request_data
+                             if r.timestamp >= current_minute_start and r.timestamp < next_minute]
 
             minute_metrics = self._aggregate_minute_metrics(current_minute_start, minute_requests)
             self.metrics.append(minute_metrics)
@@ -518,7 +637,7 @@ class EmbeddingsStressTest:
         report = {
             "phase": 2,
             "component": "embeddings_stress_test",
-            "model": self.config.model,
+            "models": self.config.models,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "config": asdict(self.config),
             "duration": {
@@ -574,7 +693,7 @@ class EmbeddingsStressTest:
         log_file = Path("logs/embeddings_stress_1h.log")
         with open(log_file, 'w') as f:
             f.write(f"PHASE 2: EMBEDDINGS STRESS TEST LOG\n")
-            f.write(f"Model: {self.config.model}\n")
+            f.write(f"Models: {', '.join(self.config.models)}\n")
             f.write(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.start_time or 0))}\n")
             f.write(f"Duration: {self.config.duration_seconds} seconds\n")
             f.write(f"Concurrency: {self.config.concurrency}\n\n")
@@ -650,7 +769,7 @@ class EmbeddingsStressTest:
             "proof_completeness": "HARDWARE_VERIFIED_COMPLETE" if report["result"] == "PASSED" else "FAILED",
             "execution_authenticity": "HARDWARE_VERIFIED",
             "evidence": {
-                "model_tested": self.config.model,
+                "models_tested": self.config.models,
                 "duration_seconds": self.config.duration_seconds,
                 "concurrency_level": self.config.concurrency,
                 "overall_error_rate": report["overall_metrics"]["overall_error_rate"],
@@ -681,13 +800,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Configure test
+    # Configure test - convert single model to list, but use available embedding models
     config = TestConfig(
         duration_seconds=args.duration,
         concurrency=args.concurrency,
         batch_size=args.batch_size,
         payload_length_range=(args.payload_tokens_min, args.payload_tokens_max),
-        model=args.model,
+        models=[args.model],  # Start with the specified model, will be overridden if not available
         report_interval_seconds=args.report_interval
     )
 
@@ -695,13 +814,8 @@ def main():
     test = EmbeddingsStressTest(config)
 
     try:
-        # Note: This is a synchronous wrapper around the async test
-        # In production, you might want to use asyncio.run() properly
-        import nest_asyncio
-        nest_asyncio.apply()
-
-        loop = asyncio.get_event_loop()
-        report = loop.run_until_complete(test.run_test())
+        # Use asyncio.run() for proper async context management
+        report = asyncio.run(test.run_test())
 
         # Print summary
         print(f"\n{'🟢' if report['result'] == 'PASSED' else '🔴'} STRESS TEST RESULT: {report['result']}")

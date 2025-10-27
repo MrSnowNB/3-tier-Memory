@@ -1,0 +1,65 @@
+{
+  "phase": 2,
+  "component": "embeddings_stress_test",
+  "models": [
+    "nomic-embed-text:137m-v1.5-fp16"
+  ],
+  "timestamp": "2025-10-27 13:33:31",
+  "config": {
+    "duration_seconds": 5,
+    "concurrency": 2,
+    "batch_size": 4,
+    "vector_dim": 768,
+    "report_interval_seconds": 5,
+    "payload_length_range": [
+      10,
+      512
+    ],
+    "models": [
+      "nomic-embed-text:137m-v1.5-fp16"
+    ],
+    "warmup_seconds": 10
+  },
+  "duration": {
+    "target_seconds": 5,
+    "actual_seconds": 5.0020751953125
+  },
+  "overall_metrics": {
+    "total_requests": 18,
+    "successful_requests": 1,
+    "overall_error_rate": 0.9444444444444444,
+    "p95_baseline": 554.2349815368652,
+    "p95_final": 554.2349815368652,
+    "p95_drift_percent": 0.0,
+    "memory_trend_mb_per_minute": 0.0
+  },
+  "gates": {
+    "availability": {
+      "passed": false,
+      "target_error_rate": 0.005,
+      "actual_error_rate": 0.9444444444444444
+    },
+    "latency_stability": {
+      "passed": true,
+      "target_p95_drift": 0.2,
+      "actual_p95_drift": 0.0
+    },
+    "resource_stability": {
+      "passed": true,
+      "target_memory_trend": 10.0,
+      "actual_memory_trend": 0.0
+    },
+    "backend_health": {
+      "passed": true,
+      "error_count": 17,
+      "target_max_errors": 100
+    }
+  },
+  "result": "FAILED",
+  "artifacts_generated": [
+    "logs/embeddings_stress_1h.log",
+    "logs/embeddings_stress_1h_metrics.csv",
+    "logs/embeddings_stress_1h_errors.ndjson",
+    "docs/phase2_stress_summary.json"
+  ]
+}
