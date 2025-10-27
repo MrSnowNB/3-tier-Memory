@@ -398,7 +398,7 @@ def simulate_single_hop_delivery(router: SingleHopRouter,
     }
 
 
-def validate_95_percent_success(stats: Dict[str, int]) -> bool:
+def validate_95_percent_success(stats: Dict[str, float]) -> bool:
     """Validate that routing meets 95% Phase 2 success criterion."""
     total_shards = stats['successful_deliveries'] + stats['remaining_shards'] + stats['expired_shards']
     if total_shards == 0:
