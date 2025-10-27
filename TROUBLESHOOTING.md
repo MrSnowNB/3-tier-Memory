@@ -60,14 +60,28 @@ torch.cuda.OutOfMemoryError: MPS backend out of memory
 **Context**: Multiple test runs or dev server restarts
 **Symptom**: FastAPI server fails to bind, "Address already in use"
 **Error Snippet**:
-```
+\`\`\`
 OSError: [Errno 48] Address already in use: ('127.0.0.1', 8000)
-```
+\`\`\`
 **Probable Cause**: Previous server process not cleanly terminated
 **Quick Fix**: `lsof -ti:8000 | xargs kill -9`
 **Permanent Fix**: Use randomized port binding with retries
 **Prevention**: Proper signal handling for graceful shutdown
 **Tags**: networking, testing, P2
+
+### AsyncIO Timeout Error in Stress Test
+**Context**: Running 10-60 minute embedding stress tests with scripts/stress_embeddings.py
+**Symptom**: Test immediately fails with "Timeout context manager should be used inside a task"
+**Error Snippet**:
+\`\`\`
+OSError: Timeout context manager should be used inside a task
+2025-10-27 13:10:00,492 - ERROR - Stress test failed: Ollama service not available
+\`\`\`
+**Probable Cause**: Future timeout context manager usage outside asyncio task context
+**Quick Fix**: Fix asyncio timeout usage in stress_embeddings.py around Ollama client verification
+**Permanent Fix**: Audit all asyncio timeout usage for proper task context
+**Prevention**: Add async task context validation before timeouts
+**Tags**: asyncio, testing, stress_test, P1
 
 ---
 

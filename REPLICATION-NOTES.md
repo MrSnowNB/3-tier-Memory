@@ -69,6 +69,11 @@ scope: "Deployment and development environments"
 - Monitor with `torch.mps.current_allocated_memory()` in debug mode
 - Use `torch.mps.empty_cache()` after large tensor operations
 
+### AsyncIO Stress Test Pitfalls
+- Stress test timeout context managers must be used within asyncio tasks
+- Ollama client verification fails outside proper async context
+- Always wrap timeout operations in `asyncio.create_task()` or equivalent
+
 ## Performance Baselines (Golden Environment)
 
 ### CA Grid Operations

@@ -203,12 +203,6 @@ class ShardCarrier:
                     self.total_transports += 1
                     logger.info(f"Shard {shard_id} delivered to destination {shard.destination}")
 
-                # Check for automatic detachment near destination
-                distance = shard.distance_to_destination
-                if distance <= 2.0 and np.random.random() < 0.1:  # 10% chance within 2 cells
-                    self._detach_from_glider(shard_id)
-                    logger.debug(f"Auto-detached shard {shard_id} near destination (distance: {distance:.1f})")
-
     def process_shard_lifecycle(self) -> Tuple[int, int, int]:
         """Process shard lifecycle events (TTL, delivery, cleanup).
 

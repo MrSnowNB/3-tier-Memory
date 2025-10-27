@@ -105,6 +105,7 @@ class SingleHopRouter:
                 self.failed_routes += 1
                 logger.warning(f"Failed to attach shard {shard_id} to glider {best_glider}")
 
+        self.failed_routes += 1
         return None
 
     def _calculate_distance_penalty(self, shard_pos: Tuple[int, int],
