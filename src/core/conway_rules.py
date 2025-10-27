@@ -75,15 +75,18 @@ class ConwayRuleParams:
 
     def __init__(self,
                  survival_set: Optional[Set[int]] = None,
-                 birth_set: Optional[Set[int]] = None):
+                 birth_set: Optional[Set[int]] = None,
+                 adaptation_reason: Optional[str] = None):
         """Initialize rule parameters.
 
         Args:
             survival_set: Neighbor counts for live cell survival (default {2,3})
             birth_set: Neighbor counts for dead cell birth (default {3})
+            adaptation_reason: Reason for environmental adaptation (for testing/analysis)
         """
         self.survival_set: Set[int] = survival_set if survival_set is not None else SURVIVAL_SET.copy()
         self.birth_set: Set[int] = birth_set if birth_set is not None else BIRTH_SET.copy()
+        self.adaptation_reason: Optional[str] = adaptation_reason
 
     @classmethod
     def standard(cls) -> 'ConwayRuleParams':

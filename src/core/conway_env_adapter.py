@@ -6,7 +6,7 @@ Energy levels modify rule parameters (survival/birth sets) subtly,
 affecting emergence patterns without adding directional intelligence.
 """
 
-from typing import Set, Dict, Optional, Tuple
+from typing import Set, Dict, Optional, Tuple, Any
 from .conway_rules import ConwayRuleParams, SURVIVAL_SET, BIRTH_SET
 
 
@@ -64,8 +64,7 @@ class ConwayEnvironmentAdapter:
             birth_set = BIRTH_SET.copy()
             reasoning = "normal_energy_standard_conway"
 
-        params = ConwayRuleParams(survival_set, birth_set)
-        params._adaptation_reason = reasoning  # Store reasoning for testing
+        params = ConwayRuleParams(survival_set, birth_set, adaptation_reason=reasoning)
 
         return params
 
@@ -146,7 +145,7 @@ def create_standard_environment_adapter() -> ConwayEnvironmentAdapter:
 
 
 def compare_energy_to_standard_conway(energy_value: float,
-                                    adapter: Optional[ConwayEnvironmentAdapter] = None) -> Dict[str, any]:
+                                    adapter: Optional[ConwayEnvironmentAdapter] = None) -> Dict[str, Any]:
     """Compare energy-adapted rules to standard Conway rules.
 
     Args:

@@ -295,6 +295,7 @@ class EnergyGliderCoupling:
             gradient_magnitude = np.sqrt(grad_dx**2 + grad_dy**2)
         except ValueError:
             # Boundary position
+            grad_dx, grad_dy = 0.0, 0.0
             gradient_magnitude = 0.0
 
         # Apply gradient-based modification to center cell (glider position)

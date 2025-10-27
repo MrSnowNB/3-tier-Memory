@@ -9,6 +9,11 @@ WARNING: These tests are for EXPERIMENTAL agent-level coupling features
 that are DISABLED by default. Only the EnergyField environmental modifiers
 are production-ready. Do not enable these features without understanding
 the over-engineering concerns outlined in the Phase 3 realignment plan.
+"""
+import pytest
+import numpy as np
+
+from src.energy.glider_coupling import (
     EnergyGliderConfig, EnergyGliderCoupling,
     create_energy_biased_glider_evolution,
     get_energy_influence_strength,

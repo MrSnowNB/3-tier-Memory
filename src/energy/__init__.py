@@ -26,13 +26,11 @@ else:
 
 __version__ = "0.3.0"
 
-# Public API: only core energy field functionality
+# Public API: core energy field functionality + experimental features if enabled
 __all__ = [
     'EnergyField',
     'create_linear_energy_field',
     'create_radial_energy_field'
 ]
 
-# Experimental features available but not in __all__
-if _EXPERIMENTAL_FEATURES:
-    __all__.extend(_EXPERIMENTAL_FEATURES)
+__all__ += _EXPERIMENTAL_FEATURES

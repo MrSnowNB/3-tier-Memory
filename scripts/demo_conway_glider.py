@@ -216,8 +216,11 @@ if __name__ == "__main__":
         print("\n🎉 CONWAY GLIDER DEMONSTRATION COMPLETE")
         print(f"✅ Glider moved {results['total_distance']:.1f} cells diagonally")
         print("✅ Emergent behavior validated through pure Conway physics")
-        print("🚀 Ready for Phase B: Environment-biased Conway"
+        print("🚀 Ready for Phase B: Environment-biased Conway")
 
     except Exception as e:
         logger.error(f"Demonstration failed: {e}")
         sys.exit(1)
+    finally:
+        # Always log completion attempt
+        logger.info("Demonstration execution completed")

@@ -46,8 +46,8 @@ delta_y = final_com[1] - initial_com[1]
 distance = (delta_x**2 + delta_y**2)**0.5
 
 print(f"Final COM: ({final_com[0]:.2f}, {final_com[1]:.2f})")
-print(".2f")
-print("✅ Glider moved diagonally"
+print(f"Distance moved: {distance:.2f}")
+print("✅ Glider moved diagonally")
 # Test 3: Mass conservation
 final_live = grid2.get_live_count()
 print(f"\nFinal live cells: {final_live}")

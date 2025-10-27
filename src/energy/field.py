@@ -11,13 +11,6 @@ from typing import Dict, Tuple, Optional, List
 import logging
 import time
 
-# Try to import scipy.signal, fallback to numpy implementation
-try:
-    import scipy.signal
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
-
 logger = logging.getLogger(__name__)
 
 def _convolve2d_fallback(grid: np.ndarray, kernel: np.ndarray, mode: str = 'same') -> np.ndarray:
@@ -195,10 +188,19 @@ class EnergyField:
         start_time = time.time()
         original_grid = self.energy_grid.copy()
 
+        # Check if scipy is available locally
+        scipy_signal = None
+        try:
+            import scipy.signal  # type: ignore
+            scipy_signal = scipy.signal
+            has_scipy = True
+        except ImportError:
+            has_scipy = False
+
         for step in range(steps):
             # Apply diffusion convolution
-            if HAS_SCIPY:
-                diffused = scipy.signal.convolve2d(
+            if has_scipy and scipy_signal is not None:
+                diffused = scipy_signal.convolve2d(
                     self.energy_grid,
                     self.diffusion_kernel,
                     mode='same',
