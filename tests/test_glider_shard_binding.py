@@ -168,11 +168,11 @@ class TestPositionSynchronization:
 
         # Shard should still be attached since we haven't detached yet
         assert self.shard.attached_glider_id == self.glider_id
-        assert not self.shard.is_delivered()  # Still attached
+        assert not self.shard.is_delivered  # Still attached
 
         # Detach and check delivery
         self.carrier.detach_shard_from_glider(self.glider_id)
-        assert self.shard.is_delivered()
+        assert self.shard.is_delivered
         assert self.carrier.total_transports == 1
 
     def test_auto_detachment_near_destination(self):
@@ -201,7 +201,7 @@ class TestShardLifecycle:
         shard = create_test_shard(ttl=5, destination=(10, 10))
         self.carrier.add_shard(shard)
 
-        assert not shard.is_expired()
+        assert not shard.is_expired
 
         # Process lifecycle multiple times
         for i in range(5):

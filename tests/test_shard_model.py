@@ -45,7 +45,7 @@ class TestShardCreation:
         assert shard.priority == priority
         assert shard.ttl == ttl
         assert shard.position == destination  # Should start at destination
-        assert not shard.is_delivered()  # Not yet attached to glider
+        assert not shard.is_delivered  # Not yet attached to glider
 
     def test_invalid_embedding(self):
         """Test validation of malformed embeddings."""
@@ -70,7 +70,7 @@ class TestShardCreation:
 
         # Non-integer coordinates
         with pytest.raises(ValueError, match="must be tuple of integers"):
-            VectorShard(embedding=embedding, destination=(1.5, 2.0))
+            VectorShard(embedding=embedding, destination=(1.5, 2.0))  # type: ignore
 
     def test_invalid_ttl_priority(self):
         """Test validation of TTL and priority ranges."""
@@ -120,8 +120,8 @@ class TestShardStateManagement:
         assert self.shard.priority == 1.0
         assert self.shard.hop_count == 0
         assert self.shard.attached_glider_id is None
-        assert not self.shard.is_delivered()
-        assert not self.shard.is_expired()
+        assert not self.shard.is_delivered
+        assert not self.shard.is_expired
 
     def test_distance_calculations(self):
         """Test distance and progress calculations."""
@@ -142,7 +142,7 @@ class TestShardStateManagement:
 
     def test_ttl_management(self):
         """Test TTL decrement and expiration."""
-        assert not self.shard.is_expired()
+        assert not self.shard.is_expired
 
         # Decrement TTL
         expired = self.shard.decrement_ttl()
@@ -153,7 +153,7 @@ class TestShardStateManagement:
         self.shard.ttl = 1
         expired = self.shard.decrement_ttl()
         assert expired
-        assert self.shard.is_expired()
+        assert self.shard.is_expired
 
     def test_attachment_lifecycle(self):
         """Test glider attachment and detachment."""
@@ -162,7 +162,7 @@ class TestShardStateManagement:
         # Attach
         self.shard.attach_to_glider(glider_id)
         assert self.shard.attached_glider_id == glider_id
-        assert self.shard.is_delivered() is False  # Not at destination while attached
+        assert not self.shard.is_delivered  # Not at destination while attached
 
         # Detach
         self.shard.detach_from_glider()
@@ -187,15 +187,15 @@ class TestShardStateManagement:
         # Start at destination without glider attachment = delivered
         self.shard.position = self.shard.destination
         self.shard.attached_glider_id = None
-        assert self.shard.is_delivered()
+        assert self.shard.is_delivered
 
         # At destination but still attached = not delivered
         self.shard.attached_glider_id = "glider_abc"
-        assert not self.shard.is_delivered()
+        assert not self.shard.is_delivered
 
         # Away from destination = not delivered
         self.shard.update_position((50, 50))
-        assert not self.shard.is_delivered()
+        assert not self.shard.is_delivered
 
 
 class TestShardRouting:

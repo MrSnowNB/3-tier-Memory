@@ -6,14 +6,11 @@ and similarity-based ranking used in shard routing decisions.
 
 import numpy as np
 from typing import List, Tuple, Dict, Optional, Callable
-import numba
-from numba import jit
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-@jit(nopython=True, cache=True)
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Compute cosine similarity between two vectors.
 
@@ -30,7 +27,6 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return max(-1.0, min(1.0, dot_product))
 
 
-@jit(nopython=True, cache=True)
 def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
     """Compute cosine distance (1 - similarity) between vectors.
 
@@ -45,7 +41,6 @@ def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
     return 1.0 - sim
 
 
-@jit(nopython=True, cache=True)
 def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:
     """Compute Euclidean distance between vectors.
 
@@ -56,10 +51,9 @@ def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:
     Returns:
         Euclidean distance
     """
-    return np.linalg.norm(a - b)
+    return float(np.linalg.norm(a - b))
 
 
-@jit(nopython=True, cache=True)
 def manhattan_distance(a: np.ndarray, b: np.ndarray) -> float:
     """Compute Manhattan (L1) distance between vectors.
 
@@ -70,7 +64,7 @@ def manhattan_distance(a: np.ndarray, b: np.ndarray) -> float:
     Returns:
         Manhattan distance
     """
-    return np.sum(np.abs(a - b))
+    return float(np.sum(np.abs(a - b)))
 
 
 def normalize_vector(v: np.ndarray) -> np.ndarray:

@@ -73,6 +73,7 @@ class EmbeddingGenerator:
             raise ValueError("Text input cannot be empty")
 
         start_time = time.time()
+        embedding: Optional[np.ndarray] = None
 
         for attempt in range(self.max_retries):
             try:
@@ -107,19 +108,25 @@ class EmbeddingGenerator:
                 if norm > 0:
                     embedding = embedding / norm
 
-                # Update performance stats
-                self.request_count += 1
-                request_time = time.time() - start_time
-                self.total_request_time += request_time
-
-                logger.debug(".2f")
-                return embedding
+                # Success - break out of retry loop
+                break
 
             except requests.RequestException as e:
                 if attempt == self.max_retries - 1:
                     raise RuntimeError(f"Embedding generation failed after {self.max_retries} attempts: {e}")
                 logger.warning(f"Embedding attempt {attempt + 1} failed: {e}, retrying...")
                 time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+
+        # At this point, embedding is guaranteed to be set if we didn't raise
+        assert embedding is not None, "Embedding should be set after successful generation"
+
+        # Update performance stats and return
+        self.request_count += 1
+        request_time = time.time() - start_time
+        self.total_request_time += request_time
+
+        logger.debug(".2f")
+        return embedding
 
     def generate_batch(self, texts: List[str], batch_size: int = 5) -> List[np.ndarray]:
         """Generate embeddings for multiple texts.

@@ -196,8 +196,7 @@ def get_default_cache() -> EmbeddingCache:
     return _default_cache
 
 
-def cached_generate(generator_func, cache: Optional[EmbeddingCache] = None,
-                   text: str = None) -> np.ndarray:
+def cached_generate(generator_func, text: str, cache: Optional[EmbeddingCache] = None) -> np.ndarray:
     """Generate embedding with caching.
 
     Args:

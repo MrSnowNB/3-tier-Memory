@@ -227,7 +227,7 @@ class ShardCarrier:
                 continue
 
             # Check for delivery
-            if shard.is_delivered():
+            if shard.is_delivered:
                 delivered.append(shard_id)
                 logger.debug(f"Shard {shard_id} delivered successfully")
                 continue
