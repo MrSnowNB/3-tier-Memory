@@ -30,6 +30,7 @@ from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor
 import statistics
 import numpy as np
+import httpx
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -93,12 +94,15 @@ class EmbeddingsStressTest:
 
     def __init__(self, config: TestConfig):
         self.config = config
-        self.workers = []
         self.metrics: List[MinuteMetrics] = []
         self.request_data: List[RequestMetrics] = []
         self.errors: List[Dict[str, Any]] = []
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
+
+        # Shared httpx client for all requests
+        self.client: Optional[httpx.AsyncClient] = None
+        self.semaphore: Optional[asyncio.Semaphore] = None
 
         # Create logs directory
         Path("logs").mkdir(exist_ok=True)
@@ -119,6 +123,13 @@ class EmbeddingsStressTest:
         logger.info(f"Models: {', '.join(self.config.models)}")
 
         try:
+            # Set up shared client and semaphore for all requests
+            limits = httpx.Limits(max_connections=self.config.concurrency,
+                                 max_keepalive_connections=self.config.concurrency * 2)
+            timeout = httpx.Timeout(connect=5.0, read=30.0, write=15.0, pool=None)
+            self.client = httpx.AsyncClient(limits=limits, timeout=timeout)
+            self.semaphore = asyncio.Semaphore(self.config.concurrency)
+
             # Verify Ollama connectivity
             if not await self._verify_ollama():
                 raise RuntimeError("Ollama service not available")
@@ -130,6 +141,9 @@ class EmbeddingsStressTest:
             self.start_time = time.time()
             await self._run_test_phase()
 
+            # Cleanup shared resources
+            await self.client.aclose()
+
             # Generate final report
             report = self._generate_report()
             self._save_artifacts()
@@ -137,6 +151,9 @@ class EmbeddingsStressTest:
             return report
 
         except Exception as e:
+            # Ensure cleanup on error
+            if self.client:
+                await self.client.aclose()
             logger.error(f"Stress test failed: {e}")
             raise
 
@@ -234,211 +251,99 @@ class EmbeddingsStressTest:
 
         return texts
 
-    async def _worker_task(self, worker_id: int):
-        """Individual worker task for making embedding requests."""
-        import aiohttp
-
-        # Ensure start_time is initialized (defensive programming)
-        if self.start_time is None:
-            logger.error(f"Worker {worker_id}: start_time not initialized, exiting")
-            return
-
-        async with aiohttp.ClientSession() as session:
-            while time.time() < self.start_time + self.config.duration_seconds:
-                # Generate random texts for this batch
-                texts = self._generate_random_texts(self.config.batch_size)
-
-                # Process each text individually (since Ollama API only accepts single prompts)
-                for text in texts:
-                    try:
-                        payload_tokens = len(text.split())
-
-                        # Make individual request
-                        start_time = time.time()
-
-                        # Randomly select model from available models
-                        model = random.choice(self.config.models)
-                        payload = {
-                            "model": model,
-                            "prompt": text
-                        }
-
-                        async with session.post(f"{OLLAMA_BASE_URL}{EMBEDDINGS_ENDPOINT}",
-                                              json=payload,
-                                              headers={"Content-Type": "application/json"}) as resp:
-
-                            end_time = time.time()
-                            latency_ms = (end_time - start_time) * 1000
-
-                            if resp.status == 200:
-                                data = await resp.json()
-                                embedding = data.get('embedding', [])
-                                vector_count = len(embedding)
-
-                                # Record successful request
-                                metrics = RequestMetrics(
-                                    worker_id=worker_id,
-                                    timestamp=end_time,
-                                    latency_ms=latency_ms,
-                                    success=True,
-                                    payload_tokens=payload_tokens,
-                                    batch_size=1  # Each individual request embeds 1 text
-                                )
-
-                            else:
-                                error_text = await resp.text()
-
-                                # Record failed request
-                                metrics = RequestMetrics(
-                                    worker_id=worker_id,
-                                    timestamp=end_time,
-                                    latency_ms=latency_ms,
-                                    success=False,
-                                    error_type=f"HTTP_{resp.status}",
-                                    payload_tokens=payload_tokens,
-                                    batch_size=1
-                                )
-
-                                # Record error details
-                                error_record = {
-                                    "timestamp": end_time,
-                                    "worker_id": worker_id,
-                                    "status_code": resp.status,
-                                    "error_message": error_text,
-                                    "latency_ms": latency_ms,
-                                    "payload_tokens": payload_tokens
-                                }
-                                self.errors.append(error_record)
-
-                            # Atomically add to shared metrics
-                            self.request_data.append(metrics)
-
-                    except Exception as e:
-                        end_time = time.time()
-                        # Record error
-                        metrics = RequestMetrics(
-                            worker_id=worker_id,
-                            timestamp=end_time,
-                            latency_ms=0.0,
-                            success=False,
-                            error_type=str(type(e).__name__)
-                        )
-                        self.request_data.append(metrics)
-
-                        error_record = {
-                            "timestamp": end_time,
-                            "worker_id": worker_id,
-                            "error_type": str(type(e).__name__),
-                            "error_message": str(e)
-                        }
-                        self.errors.append(error_record)
-
-                    # Small delay between individual requests
-                    await asyncio.sleep(0.005)
-
-                # Slightly longer delay between batches to prevent overwhelming
-                await asyncio.sleep(0.01)
+    # Removed _worker_task method - now using streamlined worker in _run_test_phase
 
     async def _make_embedding_request(self, worker_id: int) -> None:
-        """Make batch_size individual embedding requests using httpx."""
-        import httpx
+        """Make a single embedding request using shared client and semaphore."""
+        # Use semaphore to control concurrent requests
+        assert self.semaphore is not None
+        assert self.client is not None
 
-        # Create client with proper limits
-        limits = httpx.Limits(max_connections=1, max_keepalive_connections=1)
-        timeout = httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=None)
+        async with self.semaphore:
+            try:
+                # Generate text payload off the asyncio event loop
+                texts = await asyncio.to_thread(self._generate_random_texts, 1)
+                text = texts[0]
+                payload_tokens = len(text.split())
 
-        async with httpx.AsyncClient(limits=limits, timeout=timeout) as client:
-            # Process batch_size individual texts
-            texts = self._generate_random_texts(self.config.batch_size)
+                # Make individual request using shared client
+                start_time = time.time()
 
-            for text in texts:
-                try:
-                    payload_tokens = len(text.split())
+                # Randomly select model from available models
+                model = random.choice(self.config.models)
+                payload = {
+                    "model": model,
+                    "prompt": text
+                }
 
-                    # Make individual request
-                    start_time = time.time()
+                resp = await self.client.post(f"{OLLAMA_BASE_URL}{EMBEDDINGS_ENDPOINT}",
+                                            json=payload,
+                                            headers={"Content-Type": "application/json"})
 
-                    # Randomly select model from available models
-                    model = random.choice(self.config.models)
-                    payload = {
-                        "model": model,
-                        "prompt": text
-                    }
+                end_time = time.time()
+                latency_ms = (end_time - start_time) * 1000
 
-                    resp = await client.post(f"{OLLAMA_BASE_URL}{EMBEDDINGS_ENDPOINT}",
-                                           json=payload,
-                                           headers={"Content-Type": "application/json"})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    embedding = data.get('embedding', [])
 
-                    end_time = time.time()
-                    latency_ms = (end_time - start_time) * 1000
-
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        embedding = data.get('embedding', [])
-
-                        # Record successful request
-                        metrics = RequestMetrics(
-                            worker_id=worker_id,
-                            timestamp=end_time,
-                            latency_ms=latency_ms,
-                            success=True,
-                            payload_tokens=payload_tokens,
-                            batch_size=1  # Each individual request embeds 1 text
-                        )
-
-                    else:
-                        error_text = resp.text
-
-                        # Record failed request
-                        metrics = RequestMetrics(
-                            worker_id=worker_id,
-                            timestamp=end_time,
-                            latency_ms=latency_ms,
-                            success=False,
-                            error_type=f"HTTP_{resp.status_code}",
-                            payload_tokens=payload_tokens,
-                            batch_size=1
-                        )
-
-                        # Record error details
-                        error_record = {
-                            "timestamp": end_time,
-                            "worker_id": worker_id,
-                            "status_code": resp.status_code,
-                            "error_message": error_text,
-                            "latency_ms": latency_ms,
-                            "payload_tokens": payload_tokens
-                        }
-                        self.errors.append(error_record)
-
-                    # Atomically add to shared metrics
-                    self.request_data.append(metrics)
-
-                except Exception as e:
-                    end_time = time.time()
-                    # Record error
+                    # Record successful request
                     metrics = RequestMetrics(
                         worker_id=worker_id,
                         timestamp=end_time,
-                        latency_ms=0.0,
-                        success=False,
-                        error_type=str(type(e).__name__)
+                        latency_ms=latency_ms,
+                        success=True,
+                        payload_tokens=payload_tokens,
+                        batch_size=1  # Each individual request embeds 1 text
                     )
-                    self.request_data.append(metrics)
 
+                else:
+                    error_text = resp.text
+
+                    # Record failed request
+                    metrics = RequestMetrics(
+                        worker_id=worker_id,
+                        timestamp=end_time,
+                        latency_ms=latency_ms,
+                        success=False,
+                        error_type=f"HTTP_{resp.status_code}",
+                        payload_tokens=payload_tokens,
+                        batch_size=1
+                    )
+
+                    # Record error details
                     error_record = {
                         "timestamp": end_time,
                         "worker_id": worker_id,
-                        "error_type": str(type(e).__name__),
-                        "error_message": str(e)
+                        "status_code": resp.status_code,
+                        "error_message": error_text,
+                        "latency_ms": latency_ms,
+                        "payload_tokens": payload_tokens
                     }
                     self.errors.append(error_record)
 
-                # Small delay between individual requests
-                await asyncio.sleep(0.005)
+                # Atomically add to shared metrics
+                self.request_data.append(metrics)
 
-            # Slightly longer delay between "batches" to prevent overwhelming
-            await asyncio.sleep(0.01)
+            except Exception as e:
+                end_time = time.time()
+                # Record error
+                metrics = RequestMetrics(
+                    worker_id=worker_id,
+                    timestamp=end_time,
+                    latency_ms=0.0,
+                    success=False,
+                    error_type=str(type(e).__name__)
+                )
+                self.request_data.append(metrics)
+
+                error_record = {
+                    "timestamp": end_time,
+                    "worker_id": worker_id,
+                    "error_type": str(type(e).__name__),
+                    "error_message": str(e)
+                }
+                self.errors.append(error_record)
 
     def _sample_system_metrics(self) -> Dict[str, Union[float, int]]:
         """Sample current system resource usage."""
@@ -547,26 +452,19 @@ class EmbeddingsStressTest:
         )
 
     async def _run_test_phase(self):
-        """Execute the main concurrent test phase using httpx with semaphores."""
+        """Execute the main concurrent test phase using shared client and semaphore."""
         logger.info("🎯 MAIN TEST PHASE STARTED")
 
-        # Ensure start_time is initialized
-        assert self.start_time is not None
-
-        # Configure shared httpx client with limits
-        import httpx
-        from httpx import Limits, Timeout
-
-        limits = Limits(max_connections=self.config.concurrency,
-                       max_keepalive_connections=self.config.concurrency)
-        timeout = Timeout(connect=5.0, read=15.0, write=15.0, pool=None)
-
-        # Concurrency semaphore - already limits so we don't need another
-        # Workers will be controlled by individual client limits
+        # Ensure setup is complete
+        assert self.start_time is not None and self.client and self.semaphore
 
         async def worker(worker_id: int):
-            while time.time() < (self.start_time or 0) + self.config.duration_seconds:
+            """Individual worker that manages its request rate via semaphore."""
+            test_end = (self.start_time or 0) + self.config.duration_seconds
+            while time.time() < test_end:
                 await self._make_embedding_request(worker_id)
+                # Small delay to prevent overwhelming the system
+                await asyncio.sleep(0.001)
 
         # Start worker tasks
         worker_tasks = [asyncio.create_task(worker(i)) for i in range(self.config.concurrency)]
@@ -575,33 +473,37 @@ class EmbeddingsStressTest:
         current_minute_start = self.start_time
 
         while time.time() < self.start_time + self.config.duration_seconds:
-            # Wait for next minute boundary
-            next_minute = current_minute_start + self.config.report_interval_seconds
-            sleep_time = max(0, next_minute - time.time())
+            # Wait for next report interval boundary
+            next_report = current_minute_start + self.config.report_interval_seconds
+            sleep_time = max(0, next_report - time.time())
             await asyncio.sleep(sleep_time)
 
-            # Collect metrics for the past minute
-            minute_requests = [r for r in self.request_data
-                             if r.timestamp >= current_minute_start and r.timestamp < next_minute]
+            # Collect metrics for the past interval
+            interval_requests = [r for r in self.request_data
+                               if r.timestamp >= current_minute_start and r.timestamp < next_report]
 
-            minute_metrics = self._aggregate_minute_metrics(current_minute_start, minute_requests)
-            self.metrics.append(minute_metrics)
+            interval_metrics = self._aggregate_minute_metrics(current_minute_start, interval_requests)
+            self.metrics.append(interval_metrics)
 
             # Log summary
-            logger.info(f"📊 Minute {len(self.metrics)}: {minute_metrics.request_count} req, "
-                       f"{minute_metrics.error_rate:.1%} err, "
-                       f"{minute_metrics.p95_latency:.1f}ms p95, "
-                       f"{minute_metrics.throughput_req_per_sec:.1f} req/s, "
-                       f"{minute_metrics.rss_mb:.0f}MB RSS")
+            logger.info(f"📊 {len(self.metrics)}/{int(self.config.duration_seconds/self.config.report_interval_seconds)+1}: "
+                       f"{interval_metrics.request_count} req, "
+                       f"{interval_metrics.error_rate:.1%} err, "
+                       f"{interval_metrics.p95_latency:.1f}ms p95, "
+                       f"{interval_metrics.throughput_req_per_sec:.1f} req/s, "
+                       f"{interval_metrics.rss_mb:.0f}MB RSS")
 
-            current_minute_start = next_minute
+            current_minute_start = next_report
 
         # Stop all workers
         for task in worker_tasks:
             task.cancel()
 
-        # Wait for cancellation
-        await asyncio.gather(*worker_tasks, return_exceptions=True)
+        # Wait for cancellation and handle any exceptions
+        results = await asyncio.gather(*worker_tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"Worker {i} finished with exception: {result}")
 
         self.end_time = time.time()
         logger.info("🎯 MAIN TEST PHASE COMPLETED")
@@ -802,7 +704,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Phase 2: Embeddings Stress Test")
     parser.add_argument("--duration", type=int, default=3600, help="Test duration in seconds")
-    parser.add_argument("--concurrency", type=int, default=16, help="Number of concurrent workers")
+    parser.add_argument("--concurrency", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--batch-size", type=int, default=8, help="Embeddings per request")
     parser.add_argument("--payload-tokens-min", type=int, default=10, help="Min tokens per text")
     parser.add_argument("--payload-tokens-max", type=int, default=512, help="Max tokens per text")
@@ -833,7 +735,7 @@ def main():
         print(f"⏱️  Duration: {report['duration']['actual_seconds']:.1f}s")
         print(f"❌ Error Rate: {report['overall_metrics']['overall_error_rate']:.1%}")
         print(f"🐌 P95 Latency: {report['overall_metrics'].get('p95_baseline', 0.0):.1f}ms")
-        print(f"🧵 Workers: {len(test.workers) if hasattr(test, 'workers') else 'unknown'}")
+        print(f"🧵 Concurrency Level: {report['config']['concurrency']}")
         print(f"⚡ Throughput: {report['overall_metrics'].get('throughput_req_per_sec', 0):.1f} req/s")
 
         # Create hardware checkpoint if passed

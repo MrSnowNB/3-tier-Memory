@@ -1,0 +1,2 @@
+timestamp,minute,requests,successes,error_rate,p50_latency,p95_latency,p99_latency,mean_latency,throughput_req_per_sec,throughput_embed_per_sec,rss_mb,cpu_percent,threads,open_files,timestamp_drift_ms
+2025-10-27 14:22:57,1,160,64,0.6,488.4178638458252,546.0140705108643,570.7070827484131,454.14307340979576,2.6666666666666665,2.6666666666666665,70.28125,0.0,4,10,0.0

@@ -2,7 +2,7 @@
 
 ## Summary
 - **Maximum Stable Concurrency**: 0 workers
-- **Test Duration per Level**: 30s
+- **Test Duration per Level**: 15s
 - **Batch Size**: 8
 - **Successful Levels**: 
 
@@ -14,4 +14,4 @@ The recommended operating range is up to 0 concurrent embedding workers
 for stable performance without degradation or runner errors.
 
 ## Timestamp
-2025-10-27 13:57:20
+2025-10-27 14:01:21

@@ -1,2 +1,5 @@
 concurrency,result,duration_actual,total_requests,overall_error_rate,p95_baseline,p95_final,throughput_req_per_sec,throughput_embed_per_sec,memory_trend_mb_per_minute,models_used
-2,FAILED,30.00168490409851,150,0.6,541.0687923431396,541.0687923431396,0,0,0.0,nomic-embed-text:137m-v1.5-fp16
+2,FAILED,29.991262912750244,88,0.5795454545454546,535.9652042388916,527.7211666107178,0,0,0.0390625,nomic-embed-text:137m-v1.5-fp16
+4,FAILED,30.001025915145874,160,0.71875,536.141037940979,532.5019359588623,0,0,0.0234375,nomic-embed-text:137m-v1.5-fp16
+8,TIMEOUT,0,0,0,0,0,0,0,0,unknown
+16,TIMEOUT,0,0,0,0,0,0,0,0,unknown
